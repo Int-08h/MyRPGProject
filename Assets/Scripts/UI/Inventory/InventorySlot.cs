@@ -1,276 +1,105 @@
-﻿//using UnityEngine;
-//using UnityEngine.EventSystems;
-//using UnityEngine.UI;
-//using TMPro;
+﻿using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using System.Linq;
 
-//public class InventorySlot : MonoBehaviour,
-//    IPointerClickHandler,
-//    IPointerEnterHandler,
-//    IPointerExitHandler,
-//    IBeginDragHandler,
-//    IDragHandler,
-//    IEndDragHandler,
-//    IDropHandler
-//{
-//    // === ДАННЫЕ СЛОТА ===
-//    public string slotName;          // "head", "weapon", "ring1", "inventory_0", ...
-//    public string itemID;            // ID предмета, например "ring_of_focus"
-//    public bool isEquipmentSlot;     // true — слот экипировки (фиксированный), false — инвентарь
+public class InventorySlot : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
+{
+    public string itemID;
+    public Image iconImage;
+    public Outline outline;
 
-//    // === UI ===
-//    public Image icon;
-//    public Outline outline;
-//    public Color equippedColor = new Color(0.3f, 0.5f, 1.0f, 1.0f);  // синий для экипированного
-//    public Color defaultColor = Color.white;
+    private CharacterSelectController controller;
+    private ItemDatabase.ItemData itemData; // 🟢 НОВОЕ ПОЛЕ: для быстрого доступа к данным
 
-//    // === ССЫЛКИ (установите в инспекторе или через код) ===
-//    public CharacterSelectController controller; // можно и через static, но лучше явный ref
+    // ----------------------------------------------------
+    // МЕТОДЫ ИНИЦИАЛИЗАЦИИ И ОБРАБОТЧИКИ СОБЫТИЙ
+    // ----------------------------------------------------
 
-//    private Sprite emptyIcon;
-//    private RectTransform rectTransform;
-//    private Canvas canvas;
+    public void Initialize(string id, Sprite icon, CharacterSelectController ctrl)
+    {
+        itemID = id;
+        if (icon) iconImage.sprite = icon;
+        // Проверяем, есть ли предмет, чтобы задать цвет
+        iconImage.color = string.IsNullOrEmpty(id) ? Color.clear : Color.white;
+        controller = ctrl;
 
-//    void Awake()
-//    {
-//        rectTransform = GetComponent<RectTransform>();
-//        canvas = GetComponentInParent<Canvas>();
-//        emptyIcon = icon.sprite;
-//        RefreshVisuals();
-//    }
+        // 🟢 Загружаем данные о предмете для дальнейшего использования
+        itemData = ItemDatabase.GetItem(itemID);
+    }
 
-//    // === ПОДСКАЗКИ ===
-//    public void OnPointerEnter(PointerEventData eventData)
-//    {
-//        if (!string.IsNullOrEmpty(itemID))
-//        {
-//            var item = ItemDatabase.GetItem(itemID);
-//            if (item != null && !string.IsNullOrEmpty(item.tooltip))
-//                SimpleTooltip.Show(item.tooltip);
-//        }
-//    }
+    // Вспомогательные методы, которые, вероятно, используются в EventTriggers:
+    public void HandlePointerEnter(BaseEventData data)
+    {
+        if (data is PointerEventData pointerData)
+            OnPointerEnter(pointerData);
+    }
 
-//    public void OnPointerExit(PointerEventData eventData)
-//    {
-//        SimpleTooltip.Hide();
-//    }
+    public void HandlePointerExit(BaseEventData data)
+    {
+        if (data is PointerEventData pointerData)
+            OnPointerExit(pointerData);
+    }
 
-//    // === КЛИК: попытка экипировать / снять ===
-//    public void OnPointerClick(PointerEventData eventData)
-//    {
-//        if (string.IsNullOrEmpty(itemID)) return;
+    public void HandlePointerClick(BaseEventData data)
+    {
+        if (data is PointerEventData pointerData)
+            OnPointerClick(pointerData);
+    }
 
-//        if (isEquipmentSlot)
-//        {
-//            // Это слот экипировки → снять предмет
-//            UnequipItem();
-//        }
-//        else
-//        {
-//            // Это инвентарь → попытка экипировать
-//            TryEquipItem();
-//        }
-//    }
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (string.IsNullOrEmpty(itemID)) return;
 
-//    // === DnD ===
-//    private GameObject dragPreview;
-//    private Vector2 offset;
+        // Если данных нет, не можем экипировать
+        if (itemData == null)
+        {
+            Debug.LogError($"[InventorySlot] Не найдены ItemData для ID: {itemID}");
+            return;
+        }
 
-//    public void OnBeginDrag(PointerEventData eventData)
-//    {
-//        if (string.IsNullOrEmpty(itemID)) return;
+        TryEquipOrSwap(itemData.slot);
+    }
 
-//        dragPreview = new GameObject("DragPreview");
-//        var img = dragPreview.AddComponent<Image>();
-//        img.sprite = icon.sprite;
-//        img.raycastTarget = false;
-//        img.color = new Color(1, 1, 1, 0.7f);
+    void TryEquipOrSwap(string targetSlot)
+    {
+        // 1. Проверяем, что слот, в который мы пытаемся экипировать, не пуст.
+        if (controller.CurrentCharacter.equippedItems.TryGetValue(targetSlot, out string equippedItemID))
+        {
+            // Слот занят:
+            controller.EquipItem(targetSlot, null); // Снимаем старый предмет
 
-//        var rect = dragPreview.AddComponent<RectTransform>();
-//        rect.sizeDelta = new Vector2(64, 64);
-//        rect.position = eventData.position - offset;
+            // ✅ ИСПРАВЛЕНО: Возвращаем старый предмет в инвентарь
+            controller.CurrentCharacter.inventoryItemIds.Add(equippedItemID);
 
-//        dragPreview.transform.SetParent(canvas.transform, false);
-//        dragPreview.transform.SetAsLastSibling();
+            Debug.Log($"[InventorySlot] Снят предмет '{equippedItemID}' из {targetSlot} и перемещен в инвентарь.");
+        }
 
-//        offset = eventData.position - rectTransform.position;
-//    }
+        // 2. Сначала убираем экипируемый предмет из списка инвентаря.
+        // ЭТО ВАЖНО: Мы переносим предмет из инвентаря на персонажа.
+        if (controller.CurrentCharacter.inventoryItemIds.Remove(this.itemID))
+        {
+            Debug.Log($"[InventorySlot] Предмет {this.itemID} удален из списка инвентаря.");
+        }
 
-//    public void OnDrag(PointerEventData eventData)
-//    {
-//        if (dragPreview != null)
-//            dragPreview.transform.position = eventData.position - offset;
-//    }
+        // 3. Экипируем новый предмет
+        controller.EquipItem(targetSlot, itemID);
+        Debug.Log($"[InventorySlot] Экипирован {itemID} в {targetSlot}");
 
-//    public void OnEndDrag(PointerEventData eventData)
-//    {
-//        Destroy(dragPreview);
-//    }
+        // 4. Требуем обновления всего UI
+        controller.RefreshAllUI();
+    }
 
-//    public void OnDrop(PointerEventData eventData)
-//    {
-//        // Получаем другой слот из события
-//        var otherSlot = eventData.pointerDrag.GetComponent<InventorySlot>();
-//        if (otherSlot == null || otherSlot == this) return;
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        if (itemData != null)
+        {
+            SimpleTooltip.Show(itemData.tooltip);
+        }
+    }
 
-//        SwapItems(otherSlot);
-//    }
-
-//    // === ЛОГИКА ===
-
-//    public void TryEquipItem()
-//    {
-//        if (string.IsNullOrEmpty(itemID)) return;
-//        if (controller?.currentCharacter == null) return;
-
-//        var item = ItemDatabase.GetItem(itemID);
-//        if (item == null) return;
-
-//        // 🔒 Защита от дублирования: если уже экипирован — отмена
-//        if (controller.currentCharacter.equippedItems.ContainsValue(itemID))
-//        {
-//            Debug.LogWarning($"[InventorySlot] Предмет '{itemID}' уже экипирован. Дублирование запрещено.");
-//            return;
-//        }
-
-//        string targetSlot = item.equipmentSlot; // "ring", "weapon", "armor" и т.д.
-//        if (string.IsNullOrEmpty(targetSlot))
-//        {
-//            Debug.LogError($"[InventorySlot] Предмет '{itemID}' не имеет equipmentSlot!");
-//            return;
-//        }
-
-//        // Ищем слот экипировки с таким именем
-//        var equipSlot = FindEquipmentSlot(targetSlot);
-//        if (equipSlot != null)
-//        {
-//            // Перемещаем предмет в экипированный слот
-//            equipSlot.SetItem(itemID);
-//            SetItem(""); // очищаем текущий инвентарный слот
-//            Save();
-//        }
-//        else
-//        {
-//            Debug.LogError($"[InventorySlot] Не найден equipment slot '{targetSlot}' на сцене.");
-//        }
-//    }
-
-//    public void UnequipItem()
-//    {
-//        if (string.IsNullOrEmpty(itemID)) return;
-//        if (controller?.currentCharacter == null) return;
-
-//        // Ищем свободное место в инвентаре
-//        var freeSlot = FindFreeInventorySlot();
-//        if (freeSlot != null)
-//        {
-//            freeSlot.SetItem(itemID);
-//            SetItem(""); // снимаем с экипировки
-//            Save();
-//        }
-//        else
-//        {
-//            Debug.LogWarning("[InventorySlot] Нет свободного места в инвентаре для снятия предмета.");
-//        }
-//    }
-
-//    public void SwapItems(InventorySlot other)
-//    {
-//        if (other == null) return;
-
-//        // Простой обмен (без экипировки)
-//        if (!isEquipmentSlot && !other.isEquipmentSlot)
-//        {
-//            (other.itemID, itemID) = (itemID, other.itemID);
-//            other.RefreshVisuals();
-//            RefreshVisuals();
-//            Save(); // сохраняем оба персонажа (по факту — один и тот же)
-//            return;
-//        }
-
-//        // Если один из слотов — экипировка → перенаправляем в нужный метод
-//        if (isEquipmentSlot && !string.IsNullOrEmpty(other.itemID))
-//        {
-//            other.TryEquipItem(); // другой (инвентарь) пытается экипировать в *нас*
-//        }
-//        else if (other.isEquipmentSlot && !string.IsNullOrEmpty(itemID))
-//        {
-//            TryEquipItem(); // мы пытаемся экипировать в *него*
-//        }
-//        // Иначе — no-op
-//    }
-
-//    // === ВСПОМОГАТЕЛЬНЫЕ ===
-
-//    private InventorySlot FindEquipmentSlot(string slotType)
-//    {
-//        // Простой способ: ищем по префиксу slotName (например: "ring1", "ring2" → slotType="ring")
-//        foreach (var slot in FindObjectsOfType<InventorySlot>())
-//        {
-//            if (slot.isEquipmentSlot && slot.slotName.StartsWith(slotType))
-//            {
-//                // Проверяем, свободен ли
-//                if (string.IsNullOrEmpty(slot.itemID))
-//                    return slot;
-//            }
-//        }
-//        return null;
-//    }
-
-//    private InventorySlot FindFreeInventorySlot()
-//    {
-//        foreach (var slot in FindObjectsOfType<InventorySlot>())
-//        {
-//            if (!slot.isEquipmentSlot && string.IsNullOrEmpty(slot.itemID))
-//                return slot;
-//        }
-//        return null;
-//    }
-
-//    public void SetItem(string newID)
-//    {
-//        itemID = newID;
-//        RefreshVisuals();
-//    }
-
-//    public void RefreshVisuals()
-//    {
-//        if (string.IsNullOrEmpty(itemID))
-//        {
-//            icon.sprite = emptyIcon;
-//            outline.enabled = false;
-//        }
-//        else
-//        {
-//            var item = ItemDatabase.GetItem(itemID);
-//            icon.sprite = item?.icon ?? emptyIcon;
-
-//            if (isEquipmentSlot)
-//            {
-//                outline.enabled = true;
-//                outline.effectColor = equippedColor;
-//            }
-//            else
-//            {
-//                outline.enabled = false;
-//            }
-//        }
-//    }
-
-//    private void Save()
-//    {
-//        if (controller?.currentCharacter != null)
-//        {
-//            // Обновляем equippedItems для экипированных слотов
-//            if (isEquipmentSlot)
-//            {
-//                if (string.IsNullOrEmpty(itemID))
-//                    controller.currentCharacter.equippedItems.Remove(slotName);
-//                else
-//                    controller.currentCharacter.equippedItems[slotName] = itemID;
-//            }
-
-//            // Сохраняем
-//            SaveSystem.SaveCharacter(controller.currentCharacter);
-//        }
-//    }
-//}
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        SimpleTooltip.Hide();
+    }
+}

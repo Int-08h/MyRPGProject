@@ -1,50 +1,55 @@
-﻿//// Scripts/UI/CharacterButton.cs
-//using UnityEngine;
-//using UnityEngine.UI;
-//using TMPro;
+﻿using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+using TMPro;
 
-//public class CharacterButton : MonoBehaviour
-//{
-//    [Header("References")]
-//    public Image portraitImage;
-//    public TMP_Text nameLabel;
-//    public Outline outline;
+public class CharacterButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+{
+    public Image portraitImage;
+    public TMP_Text nameText;
+    public Outline outline;
 
-//    private Button button;
-//    private string characterId;
-//    private CharacterSelectController controller;
+    public string charId { get; private set; }
+    private System.Action<string> onSelectCallback;
 
-//    void Awake()
-//    {
-//        button = GetComponent<Button>();
-//    }
+    public void Initialize(CharacterData data, System.Action<string> onSelect)
+    {
+        charId = data.id;
+        nameText.text = data.displayName;
+        if (data.portrait) portraitImage.sprite = data.portrait;
+        onSelectCallback = onSelect;
 
-//    public void Setup(string id, CharacterSelectController ctrl)
-//    {
-//        characterId = id;
-//        controller = ctrl;
+        // ✅ Автоматический tooltip
+        tooltipContent = $"{data.displayName}\nКласс: {data.characterClass}";
+    }
 
-//        var data = Resources.Load<CharacterData>($"Characters/Character_{id}");
-//        // ↑ Например: "Characters/Character_Fire"
-//        if (data != null)
-//        {
-//            if (portraitImage != null && data.portrait != null)
-//                portraitImage.sprite = data.portrait;
-//            if (nameLabel != null)
-//                nameLabel.text = data.displayName;
-//        }
+    private string tooltipContent;
 
-//        button.onClick.RemoveAllListeners();
-//        button.onClick.AddListener(() => controller?.OnCharacterSelected(characterId));
-//    }
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        SimpleTooltip.Show(tooltipContent);
+    }
 
-//    public void Select()
-//    {
-//        if (outline != null) outline.enabled = true;
-//    }
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        SimpleTooltip.Hide();
+    }
 
-//    public void Deselect()
-//    {
-//        if (outline != null) outline.enabled = false;
-//    }
-//}
+    public void OnClick()
+    {
+        if (onSelectCallback != null)
+        {
+            onSelectCallback.Invoke(charId);
+        }
+    }
+
+    public void Select()
+    {
+        if (outline) outline.enabled = true;
+    }
+
+    public void Deselect()
+    {
+        if (outline) outline.enabled = false;
+    }
+}

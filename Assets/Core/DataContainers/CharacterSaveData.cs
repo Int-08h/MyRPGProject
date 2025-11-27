@@ -1,45 +1,62 @@
-﻿using System.Collections.Generic;
+﻿// CharacterSaveData.txt
+using System.Collections.Generic;
 using UnityEngine;
 
 [System.Serializable]
 public class CharacterSaveData
 {
-    // Идентификация
+    // --- Идентификация ---
     public string id;             // "fire_01", "ice_01"...
     public string displayName;
 
-    // Прогресс
+    // --- Прогресс ---
     public int level = 1;
     public int experience = 0;
     public int unspentStatPoints = 5;
     public int unspentSkillPoints = 0;
 
-    // Конфигурация
+    // --- Конфигурация ---
     public string selectedStarterSpell = ""; // "fireball", "frost_nova"...
 
-    // Предметы
+    // --- Предметы ---
     public Dictionary<string, string> equippedItems = new Dictionary<string, string>();
-    // ключ: slotName ("head", "weapon", "ring1"...)
-    // значение: itemID ("ring_of_focus")
+    // ✅ ИСПРАВЛЕНО: НОВОЕ ПОЛЕ: Список неэкипированных предметов в инвентаре
+    public List<string> inventoryItemIds = new List<string>();
 
-    // Навыки и благословения
+    // --- Навыки и благословения ---
     public List<string> unlockedSkillIds = new List<string>();
     public List<string> blessings = new List<string>();
 
-    // Пройденные карты
+    // --- Пройденные карты ---
     public List<string> completedMapIds = new List<string>();
 
-    // Статы вручную НЕ хранятся (вычисляются через StatsCalculator)
+    // ----------------------------------------------------------------------
 
     public static CharacterSaveData CreateNew(string charId)
     {
-        // Используем базу персонажей → пока заглушка:
         var data = new CharacterSaveData { id = charId };
-        if (charId.StartsWith("fire")) data.displayName = "Кайрос";
-        else if (charId.StartsWith("ice")) data.displayName = "Элира";
-        else if (charId.StartsWith("earth")) data.displayName = "Тера";
-        else if (charId.StartsWith("air")) data.displayName = "Зефир";
-        else if (charId.StartsWith("lightning")) data.displayName = "Вольт";
+
+        // ✅ ИСПРАВЛЕНО: Используем CharacterDatabase для получения имени.
+        var charData = CharacterDatabase.GetCharacterData(charId);
+
+        if (charData != null)
+        {
+            // 1. Берем отображаемое имя из ассета (Убираем жесткое кодирование)
+            data.displayName = charData.displayName;
+
+            // 2. Устанавливаем первое стартовое заклинание по умолчанию (если оно есть)
+            if (charData.starterSpellIds != null && charData.starterSpellIds.Length > 0)
+            {
+                data.selectedStarterSpell = charData.starterSpellIds[0];
+            }
+        }
+        else
+        {
+            data.displayName = "Неизвестный герой";
+            Debug.LogError($"[CharacterSaveData] CharacterData для ID '{charId}' не найдена в CharacterDatabase.");
+        }
+
+        // data.inventoryItemIds.Add("starting_sword"); 
 
         return data;
     }

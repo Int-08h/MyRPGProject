@@ -1,32 +1,28 @@
-// Scripts/Systems/SpellDatabase.cs
-using System.Collections.Generic;
+﻿// Assets/Data/Spells/SpellDatabase.cs
 using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
 
-public static class SpellDatabase
+[CreateAssetMenu(menuName = "Spells/Spell Database")]
+public class SpellDatabase : ScriptableObject
 {
-    private static Dictionary<string, SpellData> _cache;
-    private const string SPELLS_PATH = "Spells/";
+    public static SpellDatabase Instance;
 
-    public static SpellData GetSpell(string id)
+    public List<SpellData> spells = new List<SpellData>();
+
+    private void OnEnable()
     {
-        if (_cache == null)
-            LoadAllSpells();
-
-        return _cache != null && _cache.TryGetValue(id, out var spell) ? spell : null;
+        // Присваиваем Instance, когда ScriptableObject включен
+        Instance = this;
     }
 
-    private static void LoadAllSpells()
+    /// <summary>
+    /// Получает данные заклинания по его ID (Теперь СТАТИЧЕСКИЙ).
+    /// </summary>
+    public static SpellData GetSpell(string id) // <-- ДОБАВЛЕНО static
     {
-        _cache = new Dictionary<string, SpellData>();
-        var spells = Resources.LoadAll<SpellData>(SPELLS_PATH);
-        foreach (var spell in spells)
-        {
-            if (!string.IsNullOrEmpty(spell.id))
-                _cache[spell.id] = spell;
-        }
-        Debug.Log($"SpellDatabase loaded {_cache.Count} spells.");
+        // Используем статический Instance для доступа к списку
+        return Instance?.spells.FirstOrDefault(s => s.id == id);
     }
 
-    // �����������: ������������ (��� ��������� / �������)
-    public static void Reload() => _cache = null;
 }

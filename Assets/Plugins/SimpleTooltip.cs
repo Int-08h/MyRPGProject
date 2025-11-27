@@ -1,33 +1,53 @@
-﻿//using UnityEngine;
-//using TMPro;
+﻿// Assets/Plugins/SimpleTooltip.cs
+using UnityEngine;
+using TMPro;
 
-//public class SimpleTooltip : MonoBehaviour
-//{
-//    public static SimpleTooltip Instance;
-//    public TMP_Text text;
-//    public RectTransform rectTransform;
+[RequireComponent(typeof(CanvasGroup))]
+public class SimpleTooltip : MonoBehaviour
+{
+    public static SimpleTooltip Instance;
 
-//    void Awake()
-//    {
-//        if (Instance == null) Instance = this;
-//        else Destroy(gameObject);
-//        gameObject.SetActive(false);
-//    }
+    public TMP_Text textComponent;
+    private CanvasGroup canvasGroup;
 
-//    public static void Show(string content)
-//    {
-//        if (Instance == null || string.IsNullOrEmpty(content)) return;
-//        Instance.text.text = content;
-//        // 🔧 Исправление: Явно конвертируем Vector2 в Vector3
-//        Instance.rectTransform.anchoredPosition = (Vector3)Input.mousePosition + Vector3.up * 20;
-//        Instance.gameObject.SetActive(true);
-//    }
+    private void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+            return;
+        }
 
-//    public static void Hide() => Instance?.gameObject.SetActive(false);
+        canvasGroup = GetComponent<CanvasGroup>();
+        if (canvasGroup == null) gameObject.AddComponent<CanvasGroup>();
+        Hide();
+    }
 
-//    void Update()
-//    {
-//        // 🔧 Исправление: Явно конвертируем Vector2 в Vector3
-//        rectTransform.anchoredPosition = (Vector3)Input.mousePosition + Vector3.up * 20;
-//    }
-//}
+    public static void Show(string content)
+    {
+        if (Instance == null || string.IsNullOrEmpty(content)) return;
+
+        Instance.textComponent.text = content;
+        Instance.gameObject.SetActive(true);
+    }
+
+    public static void Hide()
+    {
+        if (Instance == null) return;
+        Instance.gameObject.SetActive(false);
+    }
+
+    private void LateUpdate()  // ← LateUpdate, чтобы перекрыть UI-анимации
+    {
+        if (!gameObject.activeSelf) return;
+
+        // ✅ Исправление: приводим оба к Vector2
+        Vector2 pos = (Vector2)Input.mousePosition + Vector2.up * 20f;
+        ((RectTransform)transform).position = pos;
+    }
+}

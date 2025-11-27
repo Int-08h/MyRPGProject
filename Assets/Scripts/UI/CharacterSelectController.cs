@@ -1,206 +1,256 @@
-﻿//using UnityEngine;
-//using UnityEngine.SceneManagement;
-//using UnityEngine.UI;
-//using TMPro;
-//using System.Collections.Generic;
+﻿// Assets/Scripts/UI/CharacterSelectController.cs
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement;
+using TMPro;
+using System.Collections.Generic;
+using System.Linq;
 
-//public class CharacterSelectController : MonoBehaviour
-//{
-//    // ——— ВКЛАДКИ ———
-//    public GameObject tab_Select, tab_Inventory, tab_Stats, tab_Skills;
-//    public Button[] tabButtons;
+public class CharacterSelectController : MonoBehaviour
+{
+    // --- НОВЫЕ ПОЛЯ ДЛЯ ДОЧЕРНИХ КОНТРОЛЛЕРОВ ---
+    [Header("Sub-Controllers (Facades)")]
+    public CharacterUIController characterUIController;
+    public InventoryController inventoryController;
+    // public StatsController statsController; // Будут добавлены позже
+    // public SkillsController skillsController; // Будут добавлены позже
 
-//    // ——— ВЫБОР ———
-//    public Transform characterList;
-//    public Transform magicGrid;
-//    public TMP_Text magicDescriptionText;
-//    public Outline selectedSpellOutline;
+    // --- ССЫЛКИ НА UI ЭЛЕМЕНТЫ (только для глобального управления) ---
+    [Header("Tabs")]
+    public GameObject tab_Select;
+    public GameObject tab_Inventory;
+    public GameObject tab_Stats;
+    public GameObject tab_Skills;
 
-//    // ——— КНОПКИ ———
-//    public Button backButton;
-//    public Button startButton;
+    [Header("UI: Character Select")]
+    public Transform characterButtonGrid;
 
-//    // ——— ДАННЫЕ ———
-//    private CharacterSaveData currentCharacter;
-//    private CharacterData selectedCharacterData;
+    [Header("UI: Buttons")]
+    public Button backButton;
+    public Button startButton;
 
-//    private GameObject[] characterButtons;
-//    private MagicButton[] magicButtons;
+    [Header("Data")]
+    // Data-классы можно убрать, так как они доступны статически,
+    // но оставляем, чтобы можно было перетащить их в Инспекторе и убедиться, что они загружены.
+    public CharacterDatabase characterDatabase;
+    public SpellDatabase spellDatabase;
+    public ItemDatabase itemDatabase;
 
-//    void Start()
-//    {
-//        SetupTabs();
-//        SetupButtons();
+    [Header("Prefabs")]
+    public GameObject characterButtonPrefab;
+    public GameObject magicButtonPrefab; // Теперь используется в CharacterUIController
 
-//        // Загрузка персонажа (из GameManager)
-//        string charId = GameManager.selectedCharacterId;
-//        if (string.IsNullOrEmpty(charId))
-//        {
-//            // Берём первого по умолчанию (fire_01)
-//            charId = "fire_01";
-//        }
+    // --- ВНУТРЕННЕЕ СОСТОЯНИЕ ---
+    private CharacterSaveData currentCharacter;
+    public CharacterSaveData CurrentCharacter => currentCharacter;
 
-//        LoadCharacter(charId);
-//        RefreshUI();
-//    }
+    private CharacterButton selectedCharacterButton;
 
-//    void SetupTabs()
-//    {
-//        tabButtons[0].onClick.AddListener(() => SwitchTab(tab_Select));
-//        tabButtons[1].onClick.AddListener(() => SwitchTab(tab_Inventory));
-//        tabButtons[2].onClick.AddListener(() => SwitchTab(tab_Stats));
-//        tabButtons[3].onClick.AddListener(() => SwitchTab(tab_Skills));
+    // ----------------------------------------------------
+    // STARTUP & INITIALIZATION
+    // ----------------------------------------------------
 
-//        SwitchTab(tab_Select); // по умолчанию
-//    }
+    void Start()
+    {
+        // 1. Инициализация дочерних контроллеров
+        characterUIController.Initialize(this);
+        inventoryController.Initialize(this);
 
-//    void SetupButtons()
-//    {
-//        backButton.onClick.AddListener(OnBack);
-//        startButton.onClick.AddListener(OnStart);
-//    }
+        // 2. Загрузка данных из GameManager
+        string charId = GameManager.selectedCharacterId;
+        LoadCharacterSelection(charId);
 
-//    // ——— ЗАГРУЗКА ПЕРСОНАЖА ———
-//    void LoadCharacter(string charId)
-//    {
-//        currentCharacter = SaveSystem.LoadCharacter(charId)
-//                        ?? CharacterSaveData.CreateNew(charId);
+        // 3. Создание кнопок персонажей
+        CreateCharacterButtons();
 
-//        // Получаем CharacterData по id
-//        selectedCharacterData = Resources.Load<CharacterData>($"Characters/{charId}");
-//        if (selectedCharacterData == null)
-//        {
-//            Debug.LogError($"CharacterData for {charId} not found!");
-//            // fallback — создадим временный
-//            selectedCharacterData = ScriptableObject.CreateInstance<CharacterData>();
-//            selectedCharacterData.id = charId;
-//            selectedCharacterData.starterSpellIds = new[] { "fireball", "fire_boots", "fire_beam" };
-//        }
+        // 4. Установка первой вкладки по умолчанию
+        SwitchTab(tab_Select);
+    }
 
-//        // Если магия ещё не выбрана — выбираем первую
-//        if (string.IsNullOrEmpty(currentCharacter.selectedStarterSpell) && selectedCharacterData.starterSpellIds.Length > 0)
-//        {
-//            currentCharacter.selectedStarterSpell = selectedCharacterData.starterSpellIds[0];
-//            SaveSystem.SaveCharacter(currentCharacter); // ✅ Автосохранение!
-//        }
+    /// <summary>
+    /// Создает кнопки для всех доступных персонажей.
+    /// </summary>
+    void CreateCharacterButtons()
+    {
+        // Используем CharacterDatabase.Instance, если не привязан публичный CharacterDatabase
+        var charDatas = characterDatabase?.characters ?? CharacterDatabase.Instance?.characters;
 
-//        RefreshCharacterList();
-//        RefreshMagicGrid();
-//    }
+        if (charDatas == null) return;
 
-//    // ——— ОБНОВЛЕНИЕ UI ———
-//    void RefreshCharacterList()
-//    {
-//        // Очистка
-//        foreach (Transform t in characterList) Destroy(t.gameObject);
+        foreach (var data in charDatas)
+        {
+            var btnObject = Instantiate(characterButtonPrefab, characterButtonGrid);
+            var btnScript = btnObject.GetComponent<CharacterButton>();
 
-//        // Получаем все персонажи (заглушка: 5 шт.)
-//        string[] charIds = { "fire_01", "ice_01", "earth_01", "air_01", "lightning_01" };
-//        characterButtons = new GameObject[charIds.Length];
+            // Инициализируем кнопку, передавая метод для обработки клика
+            btnScript.Initialize(data, OnSelectCharacter);
 
-//        for (int i = 0; i < charIds.Length; i++)
-//        {
-//            var btn = Instantiate(Resources.Load<GameObject>("Prefabs/UI/CharacterButton"), characterList);
-//            var comp = btn.GetComponent<CharacterButton>();
-//            comp.Setup(charIds[i], this);
-//            if (charIds[i] == currentCharacter.id)
-//                comp.Select();
-//            characterButtons[i] = btn;
-//        }
-//    }
+            // Если этот персонаж был выбран ранее, подсвечиваем его
+            if (currentCharacter != null && data.id == currentCharacter.id)
+            {
+                selectedCharacterButton = btnScript;
+                selectedCharacterButton.Select();
+            }
+        }
+    }
 
-//    void RefreshMagicGrid()
-//    {
-//        // Очистка
-//        foreach (Transform t in magicGrid) Destroy(t.gameObject);
+    /// <summary>
+    /// Загружает данные сохранения или создает новые для выбранного персонажа.
+    /// </summary>
+    void LoadCharacterSelection(string charId)
+    {
+        if (string.IsNullOrEmpty(charId))
+        {
+            // Если ID не установлен, берем первого персонажа
+            charId = characterDatabase?.characters?.FirstOrDefault()?.id;
+            if (string.IsNullOrEmpty(charId))
+            {
+                Debug.LogError("Нет доступных персонажей для выбора!");
+                return;
+            }
+        }
 
-//        magicButtons = new MagicButton[selectedCharacterData.starterSpellIds.Length];
+        // 1. Пытаемся загрузить существующий прогресс
+        currentCharacter = SaveSystem.LoadCharacter(charId);
 
-//        for (int i = 0; i < selectedCharacterData.starterSpellIds.Length; i++)
-//        {
-//            var btn = Instantiate(Resources.Load<GameObject>("Prefabs/UI/MagicButton"), magicGrid);
-//            var comp = btn.GetComponent<MagicButton>();
-//            string spellId = selectedCharacterData.starterSpellIds[i];
-//            comp.Setup(spellId, this);
-//            if (spellId == currentCharacter.selectedStarterSpell)
-//                comp.Select();
-//            magicButtons[i] = btn;
-//        }
-//    }
+        if (currentCharacter == null)
+        {
+            // 2. Если сохранения нет, создаем новое
+            currentCharacter = CharacterSaveData.CreateNew(charId);
+            // Если это новый персонаж, дадим ему несколько стартовых предметов для теста
+            if (currentCharacter.inventoryItemIds.Count == 0)
+            {
+                currentCharacter.inventoryItemIds.AddRange(new[] { "bronze_sword", "iron_helmet", "ring_of_focus", "health_potion" });
+            }
+            // Сохраняем новое состояние
+            SaveSystem.SaveCharacter(currentCharacter);
+        }
 
-//    void RefreshMagicDescription()
-//    {
-//        var spell = SpellDatabase.Get(currentCharacter.selectedStarterSpell);
-//        if (spell == null)
-//        {
-//            magicDescriptionText.text = "Неизвестное заклинание";
-//            return;
-//        }
+        GameManager.selectedCharacterId = currentCharacter.id;
+        RefreshAllUI();
+    }
 
-//        string desc = $"<b>{spell.displayName}</b>\n{spell.description}\n\n";
-//        if (spell.bonuses.Length > 0)
-//        {
-//            desc += "<color=#4A90E2>Бонусы:</color>\n";
-//            foreach (var b in spell.bonuses) desc += $"• {b}\n";
-//        }
-//        if (spell.debuffs.Length > 0)
-//        {
-//            desc += "<color=#D00000>Дебафы:</color>\n";
-//            foreach (var d in spell.debuffs) desc += $"• {d}\n";
-//        }
-//        magicDescriptionText.text = desc;
-//    }
+    // ----------------------------------------------------
+    // ОСНОВНЫЕ МЕТОДЫ ОБНОВЛЕНИЯ
+    // ----------------------------------------------------
 
-//    // ——— УПРАВЛЕНИЕ ———
-//    public void OnCharacterSelected(string charId)
-//    {
-//        if (currentCharacter.id == charId) return;
+    /// <summary>
+    /// Обновляет все UI-элементы.
+    /// </summary>
+    public void RefreshAllUI()
+    {
+        characterUIController.RefreshCharacterAndMagicUI();
+        inventoryController.RefreshInventoryUI();
+        inventoryController.RefreshEquippedSlotsUI();
+        // statsController.RefreshStatsUI(); 
+        // skillsController.RefreshSkillsUI();
+    }
 
-//        currentCharacter = SaveSystem.LoadCharacter(charId)
-//                        ?? CharacterSaveData.CreateNew(charId);
-//        LoadCharacter(charId);
-//        RefreshUI();
-//    }
+    // ----------------------------------------------------
+    // ОБРАБОТЧИКИ UI-СОБЫТИЙ
+    // ----------------------------------------------------
 
-//    public void OnSpellSelected(string spellId)
-//    {
-//        if (currentCharacter.selectedStarterSpell == spellId) return;
+    /// <summary>
+    /// Вызывается при нажатии на кнопку персонажа.
+    /// </summary>
+    public void OnSelectCharacter(string charId)
+    {
+        if (currentCharacter != null && currentCharacter.id == charId) return;
 
-//        currentCharacter.selectedStarterSpell = spellId;
-//        SaveSystem.SaveCharacter(currentCharacter); // ✅ Автосохранение!
-//        RefreshMagicDescription();
+        // 1. Сохраняем прогресс текущего персонажа перед сменой
+        if (currentCharacter != null)
+        {
+            SaveSystem.SaveCharacter(currentCharacter);
+        }
 
-//        // Обновляем UI: снимаем выделение со всех → выделяем текущую
-//        foreach (var btn in magicButtons) btn.Deselect();
-//        var selectedBtn = System.Array.Find(magicButtons, b => b.spellId == spellId);
-//        selectedBtn?.Select();
-//    }
+        // 2. Снимаем подсветку со старой кнопки
+        selectedCharacterButton?.Deselect();
 
-//    void RefreshUI()
-//    {
-//        RefreshMagicDescription();
-//    }
+        // 3. Загружаем нового персонажа
+        LoadCharacterSelection(charId);
 
-//    void SwitchTab(GameObject targetTab)
-//    {
-//        tab_Select.SetActive(targetTab == tab_Select);
-//        tab_Inventory.SetActive(targetTab == tab_Inventory);
-//        tab_Stats.SetActive(targetTab == tab_Stats);
-//        tab_Skills.SetActive(targetTab == tab_Skills);
-//    }
+        // 4. Подсвечиваем новую кнопку
+        var newSelectedButton = characterButtonGrid.GetComponentsInChildren<CharacterButton>().FirstOrDefault(b => b.charId == charId);
+        if (newSelectedButton != null)
+        {
+            selectedCharacterButton = newSelectedButton;
+            selectedCharacterButton.Select();
+        }
+    }
 
-//    public void OnBack()
-//    {
-//        SaveSystem.SaveGlobalState(); // сохраняем выбор персонажа
-//        SceneManager.LoadScene("MapSelect");
-//    }
+    /// <summary>
+    /// Вызывается при нажатии на кнопку заклинания.
+    /// </summary>
+    public void OnSpellSelected(string spellId)
+    {
+        if (currentCharacter.selectedStarterSpell == spellId) return;
 
-//    public void OnStart()
-//    {
-//        // Финальное сохранение
-//        SaveSystem.SaveCharacter(currentCharacter);
-//        SaveSystem.SaveGlobalState();
+        currentCharacter.selectedStarterSpell = spellId;
+        SaveSystem.SaveCharacter(currentCharacter);
 
-//        SceneManager.LoadScene("GameScene"); // или "TestScene"
-//    }
-//}
+        // 💡 Делегируем обновление UI дочернему контроллеру
+        characterUIController.UpdateMagicButtonHighlight(spellId);
+    }
+
+    /// <summary>
+    /// Экипирует или снимает предмет (вызывается из InventorySlot).
+    /// </summary>
+    public void EquipItem(string slotName, string itemID)
+    {
+        // 💡 Логика переноса предмета (удаление/добавление в equippedItems) 
+        // остается здесь, чтобы иметь централизованный доступ к CharacterSaveData.
+
+        if (string.IsNullOrEmpty(itemID))
+        {
+            // Снять предмет
+            currentCharacter.equippedItems.Remove(slotName);
+        }
+        else
+        {
+            // Экипировать
+            currentCharacter.equippedItems[slotName] = itemID;
+        }
+
+        SaveSystem.SaveCharacter(currentCharacter);
+        // Обратите внимание: InventorySlot вызывает RefreshAllUI после EquipItem(),
+        // чтобы обновить инвентарь и слоты экипировки.
+    }
+
+    /// <summary>
+    /// Переключает активную вкладку.
+    /// </summary>
+    public void SwitchTab(GameObject targetTab)
+    {
+        tab_Select.SetActive(false);
+        tab_Inventory.SetActive(false);
+        tab_Stats.SetActive(false);
+        tab_Skills.SetActive(false);
+
+        targetTab.SetActive(true);
+    }
+
+    public void OnBack()
+    {
+        SaveSystem.SaveGlobalState();
+        SceneManager.LoadScene("MapSelect");
+    }
+
+    public void OnStartGame()
+    {
+        if (currentCharacter != null && !string.IsNullOrEmpty(GameManager.selectedMap) && !string.IsNullOrEmpty(currentCharacter.selectedStarterSpell))
+        {
+            // 1. Сохраняем финальные данные персонажа
+            SaveSystem.SaveCharacter(currentCharacter);
+
+            // 2. Устанавливаем выбранного персонажа в GameManager (уже сделано в LoadCharacterSelection, но для надежности)
+            GameManager.selectedCharacterId = currentCharacter.id;
+
+            // 3. Переход на сцену игры
+            SceneManager.LoadScene("GameScene"); // Или любая другая сцена игры
+        }
+        else
+        {
+            Debug.LogWarning("Невозможно начать игру: Карта или стартовое заклинание не выбраны!");
+        }
+    }
+}
